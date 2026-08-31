@@ -13,6 +13,7 @@ interface ParsedLeftQR {
   invoiceNumber: string;
   date: string;
   totalAmount: number;
+  expectedTotalItems: number | null;
   items: InvoiceItem[];
   sellerId: string;
   buyerId: string;
@@ -86,22 +87,41 @@ export const ScanInvoicePage: React.FC = () => {
     return `${year}-${month}-${day}`;
   };
 
+  const isNumeric = (str: string | undefined): boolean => {
+    if (!str || typeof str !== 'string') return false;
+    return /^-?\d+(\.\d+)?$/.test(str.trim());
+  };
+
+  const cleanItemName = (rawName: string): string => {
+    if (!rawName) return '';
+    const trimmed = rawName.trim();
+    // Remove leading index digits if format is "1品名" or "01品名" where it's followed by non-digits
+    const stripped = trimmed.replace(/^(\d{1,2})([^\d\s].*)$/, '$2');
+    return (stripped.trim() || trimmed).replace(/^:+/, '');
+  };
+
   const decodeRawInvoiceString = (rawStr: string, binaryData?: number[], forceBig5 = false): string => {
     if (binaryData && binaryData.length > 0) {
       try {
         const bytes = new Uint8Array(binaryData);
         if (forceBig5) {
-          return new TextDecoder('big5').decode(bytes);
+          try {
+            return new TextDecoder('big5').decode(bytes);
+          } catch {
+            // fallback
+          }
         }
-        const hasHighByte = binaryData.some((b) => b > 127);
-        if (hasHighByte) {
+        // Try UTF-8 first
+        try {
+          return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        } catch {
+          // Not clean UTF-8 -> decode Big5
           try {
             return new TextDecoder('big5').decode(bytes);
           } catch {
             return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
           }
         }
-        return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
       } catch {
         // fallback
       }
@@ -123,7 +143,9 @@ export const ScanInvoicePage: React.FC = () => {
       if (hasHighByte || forceBig5) {
         try {
           const decoded = new TextDecoder('big5').decode(rawBytes);
-          return decoded;
+          if (!decoded.includes('\ufffd')) {
+            return decoded;
+          }
         } catch {
           // fallback
         }
@@ -156,29 +178,62 @@ export const ScanInvoicePage: React.FC = () => {
       variableData = variableData.substring(1);
     }
 
-    let parts = variableData.split(':');
-    let encodingParam = '1';
-    if (parts.length >= 4) {
-      encodingParam = parts[3];
-    }
+    // Determine if encoding specifies Big-5 (0 = Big-5, 1 = UTF-8, 2 = Base64)
+    const initialParts = variableData.split(':');
+    const isBig5 = initialParts[2] === '0' || initialParts[3] === '0' || variableData.includes(':0:');
 
-    const isBig5 = encodingParam === '0';
     const decodedFull = decodeRawInvoiceString(raw, qr.binaryData, isBig5);
     let decodedVariable = decodedFull.substring(fixedInfoLength);
     if (decodedVariable.startsWith(':')) {
       decodedVariable = decodedVariable.substring(1);
     }
-    parts = decodedVariable.split(':');
+
+    const parts = decodedVariable.split(':').map((p) => p.trim());
+
+    let expectedTotalItems: number | null = null;
+    if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+      expectedTotalItems = parseInt(parts[1], 10);
+    }
+
+    // Find starting index of item triples (name, qty, price)
+    let startIdx = -1;
+    for (let i = 1; i < parts.length - 2; i++) {
+      const candidateName = parts[i];
+      const candidateQty = parts[i + 1];
+      const candidatePrice = parts[i + 2];
+      if (!isNumeric(candidateQty) || !isNumeric(candidatePrice)) {
+        continue;
+      }
+      // If candidateName is a single or 2-digit number and we're at header positions (index 1, 2, 3), skip header flags
+      if (/^\d{1,2}$/.test(candidateName) && i <= 3) {
+        continue;
+      }
+      startIdx = i;
+      break;
+    }
+
+    if (startIdx === -1) {
+      if (parts.length >= 7 && (parts.length - 4) % 3 === 0 && isNumeric(parts[5]) && isNumeric(parts[6])) {
+        startIdx = 4;
+      } else if (parts.length >= 6 && (parts.length - 3) % 3 === 0 && isNumeric(parts[4]) && isNumeric(parts[5])) {
+        startIdx = 3;
+      } else if (parts.length >= 5 && (parts.length - 2) % 3 === 0 && isNumeric(parts[3]) && isNumeric(parts[4])) {
+        startIdx = 2;
+      }
+    }
 
     const items: InvoiceItem[] = [];
-    if (parts.length >= 5) {
-      const itemParts = parts.slice(4).filter((p) => p.trim() !== '');
-      for (let i = 0; i < itemParts.length; i += 3) {
-        const name = itemParts[i];
-        const qty = itemParts[i + 1];
-        const price = itemParts[i + 2];
-        if (name && qty !== undefined && price !== undefined) {
-          items.push({ name: name.trim(), qty, price });
+    if (startIdx !== -1) {
+      for (let i = startIdx; i + 2 < parts.length; i += 3) {
+        const rawName = parts[i];
+        const qty = parts[i + 1];
+        const price = parts[i + 2];
+        if (rawName && isNumeric(qty) && isNumeric(price)) {
+          items.push({
+            name: cleanItemName(rawName),
+            qty,
+            price,
+          });
         }
       }
     }
@@ -187,6 +242,7 @@ export const ScanInvoicePage: React.FC = () => {
       invoiceNumber,
       date,
       totalAmount: isNaN(totalAmount) ? 0 : totalAmount,
+      expectedTotalItems,
       items,
       sellerId,
       buyerId,
@@ -207,14 +263,22 @@ export const ScanInvoicePage: React.FC = () => {
     }
 
     const parts = content.split(':').map((p) => p.trim()).filter((p) => p.length > 0);
-    const items: InvoiceItem[] = [];
+    let startIdx = 0;
+    if (parts.length >= 4 && /^\d{1,2}$/.test(parts[0]) && !isNumeric(parts[1]) && isNumeric(parts[2]) && isNumeric(parts[3])) {
+      startIdx = 1;
+    }
 
-    for (let i = 0; i < parts.length; i += 3) {
-      const name = parts[i];
+    const items: InvoiceItem[] = [];
+    for (let i = startIdx; i + 2 < parts.length; i += 3) {
+      const rawName = parts[i];
       const qty = parts[i + 1];
       const price = parts[i + 2];
-      if (name && qty !== undefined && price !== undefined) {
-        items.push({ name, qty, price });
+      if (rawName && isNumeric(qty) && isNumeric(price)) {
+        items.push({
+          name: cleanItemName(rawName),
+          qty,
+          price,
+        });
       }
     }
 
@@ -322,14 +386,24 @@ export const ScanInvoicePage: React.FC = () => {
       setRightScanned(currentRight);
     }
 
-    // Both detected -> finalize immediately!
+    // Case 1: Both QR codes scanned -> Finalize immediately with all items!
     if (currentLeft && currentRight) {
       finalizeTransaction(currentLeft, currentRight);
       return;
     }
 
-    // Only Left QR detected -> Show Toast prompt to align right side
+    // Case 2: Left QR code scanned and already has items (or full items)
     if (currentLeft && !currentRight) {
+      // If expectedTotalItems is known and we already have all items, or if Left QR has items and expectedTotalItems is 1
+      if (
+        (currentLeft.expectedTotalItems !== null && currentLeft.items.length >= currentLeft.expectedTotalItems) ||
+        (currentLeft.items.length > 0 && currentLeft.expectedTotalItems === null)
+      ) {
+        finalizeTransaction(currentLeft, null);
+        return;
+      }
+
+      // Left QR has 0 items or fewer items than expected -> prompt user with Toast
       setToastMessage({
         text: t('scanInvoice.toastHoldStraightLeft'),
         type: 'warning',
@@ -338,7 +412,7 @@ export const ScanInvoicePage: React.FC = () => {
       return;
     }
 
-    // Only Right QR detected -> Show Toast prompt to align left side
+    // Case 3: Only Right QR code scanned -> prompt user to scan Left QR
     if (!currentLeft && currentRight) {
       setToastMessage({
         text: t('scanInvoice.toastHoldStraightRight'),
@@ -541,7 +615,9 @@ export const ScanInvoicePage: React.FC = () => {
                     {t('scanInvoice.leftCodeStatus')}
                   </span>
                   <span className="text-xs mt-1 font-semibold text-white">
-                    {leftScanned ? `✓ ${leftScanned.invoiceNumber}` : t('scanInvoice.statusWaiting')}
+                    {leftScanned
+                      ? `✓ ${leftScanned.invoiceNumber}${leftScanned.items.length > 0 ? ` (${leftScanned.items.length} ${t('scanInvoice.itemCount')})` : ''}`
+                      : t('scanInvoice.statusWaiting')}
                   </span>
                 </div>
 
@@ -618,7 +694,10 @@ export const ScanInvoicePage: React.FC = () => {
             <span>
               {t('scanInvoice.leftCodeStatus')}:{' '}
               {leftScanned ? (
-                <span className="text-green-400 font-bold">{leftScanned.invoiceNumber} (${leftScanned.totalAmount})</span>
+                <span className="text-green-400 font-bold">
+                  {leftScanned.invoiceNumber} (${leftScanned.totalAmount})
+                  {leftScanned.items.length > 0 ? ` [${leftScanned.items.length}項]` : ''}
+                </span>
               ) : (
                 <span className="text-gray-400">{t('scanInvoice.statusWaiting')}</span>
               )}
