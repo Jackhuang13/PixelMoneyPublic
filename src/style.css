@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+html, body, #app {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
 @font-face {
     font-family: 'Cubic 11';
     src: url('./assets/fonts/Cubic_11.woff2') format('woff2');

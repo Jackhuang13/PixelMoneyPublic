@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useI18n } from '@/i18n';
 import { db } from '@/db';
-import type { Language } from '@/types';
+import type { Language, Category, Account, Transaction } from '@/types';
 
 export const SettingsPage: React.FC = () => {
   const { settings, saveSettings, loadData, showConfirmationModal } = useApp();
@@ -64,18 +64,55 @@ export const SettingsPage: React.FC = () => {
         const content = event.target?.result as string;
         const backupData = JSON.parse(content);
 
-        if (!backupData.accounts || !backupData.categories || !backupData.transactions) {
+        let accounts = backupData.accounts;
+        let categories = backupData.categories;
+        let transactions = backupData.transactions;
+
+        // Support old backup format where data is nested inside backupData.data
+        if ((!accounts || !categories || !transactions) && backupData.data) {
+          accounts = backupData.data.accounts || accounts;
+          categories = backupData.data.categories || categories;
+          transactions = backupData.data.transactions || transactions;
+        }
+
+        if (!accounts || !categories || !transactions) {
           throw new Error('Invalid structure');
         }
+
+        const sanitizedAccounts = (Array.isArray(accounts) ? accounts : []).map((a: any) => ({
+          name: a.name || '未命名',
+          balance: Number(a.balance) || 0,
+          active: a.active !== undefined ? Boolean(a.active) : true,
+          ...(a.id !== undefined ? { id: a.id } : {}),
+        }));
+
+        const sanitizedCategories: Category[] = (Array.isArray(categories) ? categories : []).map((c: any) => ({
+          name: c.name || '未分類',
+          type: (c.type === 'income' ? 'income' : 'expense') as 'income' | 'expense',
+          active: c.active !== undefined ? Boolean(c.active) : true,
+          isDefault: !!c.isDefault,
+          icon: c.icon || (c.type === 'income' ? '💰' : '📦'),
+          ...(c.id !== undefined ? { id: c.id } : {}),
+        }));
+
+        const sanitizedTransactions = (Array.isArray(transactions) ? transactions : []).map((t: any) => ({
+          date: t.date || new Date().toISOString().slice(0, 10),
+          categoryId: t.categoryId !== undefined && t.categoryId !== null ? Number(t.categoryId) : null,
+          accountId: t.accountId !== undefined ? Number(t.accountId) : (sanitizedAccounts[0]?.id || 1),
+          amount: Number(t.amount) || 0,
+          notes: t.notes || '',
+          invoiceNumber: t.invoiceNumber || '',
+          ...(t.id !== undefined ? { id: t.id } : {}),
+        }));
 
         await db.transaction('rw', db.accounts, db.categories, db.transactions, async () => {
           await db.accounts.clear();
           await db.categories.clear();
           await db.transactions.clear();
 
-          await db.accounts.bulkAdd(backupData.accounts);
-          await db.categories.bulkAdd(backupData.categories);
-          await db.transactions.bulkAdd(backupData.transactions);
+          await db.accounts.bulkAdd(sanitizedAccounts);
+          await db.categories.bulkAdd(sanitizedCategories);
+          await db.transactions.bulkAdd(sanitizedTransactions);
         });
 
         await loadData();
