@@ -3,6 +3,32 @@ import jsQR from 'jsqr';
 import { useApp } from '@/context/AppContext';
 import { useI18n } from '@/i18n';
 
+interface InvoiceItem {
+  name: string;
+  qty: string;
+  price: string;
+}
+
+interface ParsedLeftQR {
+  invoiceNumber: string;
+  date: string;
+  totalAmount: number;
+  items: InvoiceItem[];
+  sellerId: string;
+  buyerId: string;
+  raw: string;
+}
+
+interface ParsedRightQR {
+  items: InvoiceItem[];
+  raw: string;
+}
+
+interface RawQRResult {
+  data: string;
+  binaryData?: number[];
+}
+
 export const ScanInvoicePage: React.FC = () => {
   const { categories, accounts, addTransaction, showConfirmationModal, setCurrentPage } = useApp();
   const { t } = useI18n();
@@ -11,12 +37,47 @@ export const ScanInvoicePage: React.FC = () => {
   const [cameraReady, setCameraReady] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<boolean>(false);
 
+  // Status for Left and Right QR Codes
+  const [leftScanned, setLeftScanned] = useState<ParsedLeftQR | null>(null);
+  const [rightScanned, setRightScanned] = useState<ParsedRightQR | null>(null);
+  const [toastMessage, setToastMessage] = useState<{
+    text: string;
+    type: 'info' | 'warning' | 'success';
+    showDirectSave?: boolean;
+  } | null>(null);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isProcessingRef = useRef<boolean>(false);
+  const isFinalizingRef = useRef<boolean>(false);
   const lastProcessedInvoiceRef = useRef<string | null>(null);
   const animationFrameIdRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  const leftScannedRef = useRef<ParsedLeftQR | null>(null);
+  const rightScannedRef = useRef<ParsedRightQR | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const barcodeDetectorRef = useRef<any>(null);
+
+  useEffect(() => {
+    leftScannedRef.current = leftScanned;
+  }, [leftScanned]);
+
+  useEffect(() => {
+    rightScannedRef.current = rightScanned;
+  }, [rightScanned]);
+
+  // Initialize native BarcodeDetector if supported
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        barcodeDetectorRef.current = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+      } catch {
+        barcodeDetectorRef.current = null;
+      }
+    }
+  }, []);
 
   const convertTaiwanDateToISO = (taiwanDate: string): string => {
     const year = parseInt(taiwanDate.substring(0, 3), 10) + 1911;
@@ -25,83 +86,151 @@ export const ScanInvoicePage: React.FC = () => {
     return `${year}-${month}-${day}`;
   };
 
-  const processInvoiceCode = async (rawValue: string) => {
-    if (isProcessingRef.current) return;
-    isProcessingRef.current = true;
-    setErrorMessage('');
+  const decodeRawInvoiceString = (rawStr: string, binaryData?: number[], forceBig5 = false): string => {
+    if (binaryData && binaryData.length > 0) {
+      try {
+        const bytes = new Uint8Array(binaryData);
+        if (forceBig5) {
+          return new TextDecoder('big5').decode(bytes);
+        }
+        const hasHighByte = binaryData.some((b) => b > 127);
+        if (hasHighByte) {
+          try {
+            return new TextDecoder('big5').decode(bytes);
+          } catch {
+            return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+          }
+        }
+        return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      } catch {
+        // fallback
+      }
+    }
 
     try {
-      let fullRawString = rawValue;
-      if (fullRawString.startsWith('**')) {
-        // Right QR only, waiting for left QR
-        isProcessingRef.current = false;
-        return;
+      const rawBytes = new Uint8Array(rawStr.length);
+      let hasHighByte = false;
+      for (let i = 0; i < rawStr.length; i++) {
+        const code = rawStr.charCodeAt(i);
+        if (code >= 0xff61 && code <= 0xff9f) {
+          rawBytes[i] = code - 0xfec0;
+          hasHighByte = true;
+        } else {
+          rawBytes[i] = code & 0xff;
+          if ((code & 0xff) > 127) hasHighByte = true;
+        }
       }
-
-      const fixedInfoLength = 77;
-      if (fullRawString.length < fixedInfoLength) {
-        throw new Error(t('scanInvoice.invalidMainInfo'));
-      }
-
-      const invoiceNumber = fullRawString.substring(0, 10);
-      if (lastProcessedInvoiceRef.current === invoiceNumber) {
-        isProcessingRef.current = false;
-        return;
-      }
-
-      const dateTaiwan = fullRawString.substring(10, 17);
-      const totalAmountHex = fullRawString.substring(29, 37);
-
-      const totalAmount = parseInt(totalAmountHex, 16);
-      const date = convertTaiwanDateToISO(dateTaiwan);
-
-      let variableData = fullRawString.substring(fixedInfoLength);
-      if (variableData.startsWith(':')) {
-        variableData = variableData.substring(1);
-      }
-
-      let parts = variableData.split(':');
-      let encodingParam = '1';
-      if (parts.length >= 4) {
-        encodingParam = parts[3];
-      }
-
-      if (encodingParam === '0') {
+      if (hasHighByte || forceBig5) {
         try {
-          const rawBytes = new Uint8Array(fullRawString.length);
-          for (let i = 0; i < fullRawString.length; i++) {
-            const code = fullRawString.charCodeAt(i);
-            if (code >= 0xff61 && code <= 0xff9f) {
-              rawBytes[i] = code - 0xfec0;
-            } else {
-              rawBytes[i] = code & 0xff;
-            }
-          }
-          const decoder = new TextDecoder('big5');
-          fullRawString = decoder.decode(rawBytes);
-
-          variableData = fullRawString.substring(fixedInfoLength);
-          if (variableData.startsWith(':')) {
-            variableData = variableData.substring(1);
-          }
-          parts = variableData.split(':');
+          const decoded = new TextDecoder('big5').decode(rawBytes);
+          return decoded;
         } catch {
-          // Fallback if big5 decoder fails
+          // fallback
         }
       }
+    } catch {
+      // fallback
+    }
 
-      const itemDescriptions: string[] = [];
-      if (parts.length >= 5) {
-        const itemParts = parts.slice(4).filter((p) => p.trim() !== '');
-        for (let i = 0; i < itemParts.length; i += 3) {
-          const name = itemParts[i];
-          const qty = itemParts[i + 1];
-          const price = itemParts[i + 2];
-          if (name && qty !== undefined && price !== undefined) {
-            itemDescriptions.push(`${name.trim()} x ${qty} @ ${price}`);
-          }
+    return rawStr;
+  };
+
+  const parseLeftQR = (qr: RawQRResult): ParsedLeftQR | null => {
+    const raw = qr.data;
+    if (raw.startsWith('**') || raw.length < 77) {
+      return null;
+    }
+
+    const invoiceNumber = raw.substring(0, 10);
+    const dateTaiwan = raw.substring(10, 17);
+    const totalAmountHex = raw.substring(29, 37);
+    const buyerId = raw.substring(37, 45);
+    const sellerId = raw.substring(45, 53);
+
+    const totalAmount = parseInt(totalAmountHex, 16);
+    const date = convertTaiwanDateToISO(dateTaiwan);
+
+    const fixedInfoLength = 77;
+    let variableData = raw.substring(fixedInfoLength);
+    if (variableData.startsWith(':')) {
+      variableData = variableData.substring(1);
+    }
+
+    let parts = variableData.split(':');
+    let encodingParam = '1';
+    if (parts.length >= 4) {
+      encodingParam = parts[3];
+    }
+
+    const isBig5 = encodingParam === '0';
+    const decodedFull = decodeRawInvoiceString(raw, qr.binaryData, isBig5);
+    let decodedVariable = decodedFull.substring(fixedInfoLength);
+    if (decodedVariable.startsWith(':')) {
+      decodedVariable = decodedVariable.substring(1);
+    }
+    parts = decodedVariable.split(':');
+
+    const items: InvoiceItem[] = [];
+    if (parts.length >= 5) {
+      const itemParts = parts.slice(4).filter((p) => p.trim() !== '');
+      for (let i = 0; i < itemParts.length; i += 3) {
+        const name = itemParts[i];
+        const qty = itemParts[i + 1];
+        const price = itemParts[i + 2];
+        if (name && qty !== undefined && price !== undefined) {
+          items.push({ name: name.trim(), qty, price });
         }
       }
+    }
+
+    return {
+      invoiceNumber,
+      date,
+      totalAmount: isNaN(totalAmount) ? 0 : totalAmount,
+      items,
+      sellerId,
+      buyerId,
+      raw,
+    };
+  };
+
+  const parseRightQR = (qr: RawQRResult): ParsedRightQR | null => {
+    const raw = qr.data;
+    if (!raw.startsWith('**')) {
+      return null;
+    }
+
+    const decoded = decodeRawInvoiceString(raw, qr.binaryData, true);
+    let content = decoded.replace(/^\*\*+/, '');
+    if (content.startsWith(':')) {
+      content = content.substring(1);
+    }
+
+    const parts = content.split(':').map((p) => p.trim()).filter((p) => p.length > 0);
+    const items: InvoiceItem[] = [];
+
+    for (let i = 0; i < parts.length; i += 3) {
+      const name = parts[i];
+      const qty = parts[i + 1];
+      const price = parts[i + 2];
+      if (name && qty !== undefined && price !== undefined) {
+        items.push({ name, qty, price });
+      }
+    }
+
+    return {
+      items,
+      raw,
+    };
+  };
+
+  const finalizeTransaction = async (left: ParsedLeftQR, right: ParsedRightQR | null) => {
+    if (isFinalizingRef.current) return;
+    isFinalizingRef.current = true;
+
+    try {
+      const allItems: InvoiceItem[] = [...left.items, ...(right ? right.items : [])];
+      const itemDescriptions = allItems.map((item) => `${item.name} x ${item.qty} @ ${item.price}`);
 
       const notes =
         t('scanInvoice.items') +
@@ -128,29 +257,100 @@ export const ScanInvoicePage: React.FC = () => {
       }
 
       await addTransaction({
-        date,
+        date: left.date,
         categoryId: defaultCategory.id,
         accountId: defaultAccount.id,
-        amount: isNaN(totalAmount) ? 0 : totalAmount,
+        amount: isNaN(left.totalAmount) ? 0 : left.totalAmount,
         notes,
-        invoiceNumber,
+        invoiceNumber: left.invoiceNumber,
       });
 
-      lastProcessedInvoiceRef.current = invoiceNumber;
+      lastProcessedInvoiceRef.current = left.invoiceNumber;
+      setToastMessage({
+        text: t('scanInvoice.toastPairSuccess'),
+        type: 'success',
+      });
 
-      showConfirmationModal(
-        t('modal.recordAddedTitle'),
-        t('modal.recordAddedMessage'),
-        () => {
-          setCurrentPage('home');
-        },
-        'success'
-      );
+      setTimeout(() => {
+        showConfirmationModal(
+          t('modal.recordAddedTitle'),
+          t('modal.recordAddedMessage'),
+          () => {
+            setCurrentPage('home');
+          },
+          'success'
+        );
+      }, 500);
     } catch (error: unknown) {
       const err = error as Error;
       setErrorMessage(t('scanInvoice.parseError') + `: ${err.message}`);
-    } finally {
-      isProcessingRef.current = false;
+      isFinalizingRef.current = false;
+    }
+  };
+
+  const handleDetectedCodes = async (detectedCodes: RawQRResult[]) => {
+    if (isFinalizingRef.current) return;
+
+    let currentLeft: ParsedLeftQR | null = leftScannedRef.current;
+    let currentRight: ParsedRightQR | null = rightScannedRef.current;
+    let newLeftDetected = false;
+    let newRightDetected = false;
+
+    for (const code of detectedCodes) {
+      if (code.data.startsWith('**')) {
+        const parsedRight = parseRightQR(code);
+        if (parsedRight && (!currentRight || currentRight.raw !== parsedRight.raw)) {
+          currentRight = parsedRight;
+          newRightDetected = true;
+        }
+      } else if (code.data.length >= 77) {
+        const parsedLeft = parseLeftQR(code);
+        if (parsedLeft && (!currentLeft || currentLeft.invoiceNumber !== parsedLeft.invoiceNumber)) {
+          if (lastProcessedInvoiceRef.current === parsedLeft.invoiceNumber) {
+            continue;
+          }
+          currentLeft = parsedLeft;
+          newLeftDetected = true;
+        }
+      }
+    }
+
+    if (newLeftDetected) {
+      setLeftScanned(currentLeft);
+    }
+    if (newRightDetected) {
+      setRightScanned(currentRight);
+    }
+
+    // Both detected -> finalize immediately!
+    if (currentLeft && currentRight) {
+      finalizeTransaction(currentLeft, currentRight);
+      return;
+    }
+
+    // Only Left QR detected -> Show Toast prompt to align right side
+    if (currentLeft && !currentRight) {
+      setToastMessage({
+        text: t('scanInvoice.toastHoldStraightLeft'),
+        type: 'warning',
+        showDirectSave: true,
+      });
+      return;
+    }
+
+    // Only Right QR detected -> Show Toast prompt to align left side
+    if (!currentLeft && currentRight) {
+      setToastMessage({
+        text: t('scanInvoice.toastHoldStraightRight'),
+        type: 'info',
+      });
+      return;
+    }
+  };
+
+  const handleDirectSave = () => {
+    if (leftScannedRef.current && !isFinalizingRef.current) {
+      finalizeTransaction(leftScannedRef.current, null);
     }
   };
 
@@ -160,7 +360,11 @@ export const ScanInvoicePage: React.FC = () => {
     const startCamera = async () => {
       try {
         const constraints: MediaStreamConstraints = {
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } },
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
           audio: false,
         };
 
@@ -196,26 +400,98 @@ export const ScanInvoicePage: React.FC = () => {
       }
     };
 
-    const scanFrame = () => {
-      if (!active || !videoRef.current || !canvasRef.current) return;
+    const scanFrame = async () => {
+      if (!active || !videoRef.current || !canvasRef.current || isFinalizingRef.current) {
+        if (active && !isFinalizingRef.current) {
+          animationFrameIdRef.current = requestAnimationFrame(scanFrame);
+        }
+        return;
+      }
+
+      if (isProcessingRef.current) {
+        animationFrameIdRef.current = requestAnimationFrame(scanFrame);
+        return;
+      }
 
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
       if (video.readyState === video.HAVE_ENOUGH_DATA && ctx) {
+        isProcessingRef.current = true;
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'dontInvert',
-        });
+        const foundCodes: RawQRResult[] = [];
+        const seenDataSet = new Set<string>();
 
-        if (code && code.data) {
-          processInvoiceCode(code.data);
+        // 1. Try Native BarcodeDetector if available
+        if (barcodeDetectorRef.current) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const barcodes = await barcodeDetectorRef.current.detect(video);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            for (const barcode of barcodes) {
+              if (barcode.rawValue && !seenDataSet.has(barcode.rawValue)) {
+                seenDataSet.add(barcode.rawValue);
+                foundCodes.push({ data: barcode.rawValue });
+              }
+            }
+          } catch {
+            // fallback to jsQR
+          }
         }
+
+        // 2. If fewer than 2 codes found, scan spatial regions using jsQR
+        if (foundCodes.length < 2) {
+          const w = canvas.width;
+          const h = canvas.height;
+
+          // Region A: Left Half (0% to 58%)
+          const leftW = Math.floor(w * 0.58);
+          const leftImgData = ctx.getImageData(0, 0, leftW, h);
+          const leftResult = jsQR(leftImgData.data, leftW, h, { inversionAttempts: 'dontInvert' });
+          if (leftResult && leftResult.data && !seenDataSet.has(leftResult.data)) {
+            seenDataSet.add(leftResult.data);
+            foundCodes.push({
+              data: leftResult.data,
+              binaryData: leftResult.binaryData,
+            });
+          }
+
+          // Region B: Right Half (42% to 100%)
+          const rightStartX = Math.floor(w * 0.42);
+          const rightW = w - rightStartX;
+          const rightImgData = ctx.getImageData(rightStartX, 0, rightW, h);
+          const rightResult = jsQR(rightImgData.data, rightW, h, { inversionAttempts: 'dontInvert' });
+          if (rightResult && rightResult.data && !seenDataSet.has(rightResult.data)) {
+            seenDataSet.add(rightResult.data);
+            foundCodes.push({
+              data: rightResult.data,
+              binaryData: rightResult.binaryData,
+            });
+          }
+
+          // Region C: Full Frame (if still none)
+          if (foundCodes.length === 0) {
+            const fullImgData = ctx.getImageData(0, 0, w, h);
+            const fullResult = jsQR(fullImgData.data, w, h, { inversionAttempts: 'dontInvert' });
+            if (fullResult && fullResult.data && !seenDataSet.has(fullResult.data)) {
+              seenDataSet.add(fullResult.data);
+              foundCodes.push({
+                data: fullResult.data,
+                binaryData: fullResult.binaryData,
+              });
+            }
+          }
+        }
+
+        if (foundCodes.length > 0) {
+          await handleDetectedCodes(foundCodes);
+        }
+
+        isProcessingRef.current = false;
       }
 
       animationFrameIdRef.current = requestAnimationFrame(scanFrame);
@@ -251,6 +527,43 @@ export const ScanInvoicePage: React.FC = () => {
           />
           <canvas ref={canvasRef} className="hidden" />
 
+          {/* Dual QR Scanning Guide Lines */}
+          {cameraReady && !cameraError && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center px-4">
+              <div className="w-full max-w-md flex justify-between gap-4 h-3/5">
+                {/* Left QR Target Box */}
+                <div
+                  className={`flex-1 border-2 border-dashed rounded flex flex-col items-center justify-center p-2 transition-colors ${
+                    leftScanned ? 'border-green-400 bg-green-950/30' : 'border-yellow-400/70 bg-black/20'
+                  }`}
+                >
+                  <span className="text-xs font-bold px-2 py-0.5 bg-black/60 rounded text-yellow-300">
+                    {t('scanInvoice.leftCodeStatus')}
+                  </span>
+                  <span className="text-xs mt-1 font-semibold text-white">
+                    {leftScanned ? `✓ ${leftScanned.invoiceNumber}` : t('scanInvoice.statusWaiting')}
+                  </span>
+                </div>
+
+                {/* Right QR Target Box */}
+                <div
+                  className={`flex-1 border-2 border-dashed rounded flex flex-col items-center justify-center p-2 transition-colors ${
+                    rightScanned ? 'border-green-400 bg-green-950/30' : 'border-yellow-400/70 bg-black/20'
+                  }`}
+                >
+                  <span className="text-xs font-bold px-2 py-0.5 bg-black/60 rounded text-yellow-300">
+                    {t('scanInvoice.rightCodeStatus')}
+                  </span>
+                  <span className="text-xs mt-1 font-semibold text-white">
+                    {rightScanned
+                      ? `✓ ${rightScanned.items.length} ${t('scanInvoice.itemCount')}`
+                      : t('scanInvoice.statusWaiting')}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {!cameraReady && !cameraError && (
             <div className="absolute inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center">
               <p className="text-white text-xl">{t('scanInvoice.loadingCamera')}</p>
@@ -264,9 +577,76 @@ export const ScanInvoicePage: React.FC = () => {
           )}
         </div>
 
+        {/* Floating Non-Modal Toast Notification for Dual QR Alignment */}
+        {toastMessage && (
+          <div
+            className={`p-3 pixel-border flex flex-col sm:flex-row items-center justify-between gap-3 text-sm font-bold shadow-lg transition-all duration-300 ${
+              toastMessage.type === 'success'
+                ? 'bg-green-800 border-green-400 text-green-100'
+                : toastMessage.type === 'warning'
+                ? 'bg-amber-800 border-yellow-400 text-yellow-100 animate-pulse'
+                : 'bg-blue-800 border-blue-400 text-blue-100'
+            }`}
+          >
+            <div className="flex items-center gap-2 text-left">
+              <span className="text-xl">
+                {toastMessage.type === 'success' ? '✨' : '📐'}
+              </span>
+              <span>{toastMessage.text}</span>
+            </div>
+
+            {toastMessage.showDirectSave && leftScanned && (
+              <button
+                type="button"
+                onClick={handleDirectSave}
+                className="whitespace-nowrap px-3 py-1 text-xs sm:text-sm bg-yellow-400 hover:bg-yellow-300 text-black font-bold pixel-border cursor-pointer transition-transform active:translate-y-px active:translate-x-px"
+              >
+                {t('scanInvoice.saveWithoutDetails')}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Real-time scan indicators */}
+        <div className="flex justify-between items-center bg-gray-800 p-2.5 pixel-border text-xs sm:text-sm font-bold text-gray-300">
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                leftScanned ? 'bg-green-400 animate-ping' : 'bg-gray-500'
+              }`}
+            />
+            <span>
+              {t('scanInvoice.leftCodeStatus')}:{' '}
+              {leftScanned ? (
+                <span className="text-green-400 font-bold">{leftScanned.invoiceNumber} (${leftScanned.totalAmount})</span>
+              ) : (
+                <span className="text-gray-400">{t('scanInvoice.statusWaiting')}</span>
+              )}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                rightScanned ? 'bg-green-400 animate-ping' : 'bg-gray-500'
+              }`}
+            />
+            <span>
+              {t('scanInvoice.rightCodeStatus')}:{' '}
+              {rightScanned ? (
+                <span className="text-green-400 font-bold">
+                  {rightScanned.items.length} {t('scanInvoice.itemCount')}
+                </span>
+              ) : (
+                <span className="text-gray-400">{t('scanInvoice.statusWaiting')}</span>
+              )}
+            </span>
+          </div>
+        </div>
+
         <button
           onClick={() => setCurrentPage('home')}
-          className="w-full px-4 py-2 text-lg font-bold transition-transform transform active:translate-y-px active:translate-x-px pixel-border bg-gray-600 mt-4"
+          className="w-full px-4 py-2 text-lg font-bold transition-transform transform active:translate-y-px active:translate-x-px pixel-border bg-gray-600 mt-4 cursor-pointer hover:bg-gray-500"
         >
           {t('scanInvoice.backButton')}
         </button>
