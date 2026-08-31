@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useI18n } from '@/i18n';
 
 interface CalculatorProps {
   value: number | null;
@@ -7,6 +8,7 @@ interface CalculatorProps {
 }
 
 export const Calculator: React.FC<CalculatorProps> = ({ value, onConfirm, onClose }) => {
+  const { t } = useI18n();
   const [expression, setExpression] = useState<string>(value ? String(value) : '0');
 
   const appendNumber = (num: string) => {
@@ -204,7 +206,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ value, onConfirm, onClos
           onClick={handleConfirm}
           className="w-full pixel-border bg-green-500 text-lg py-2 mt-2 font-bold active:translate-y-px active:translate-x-px transition-transform"
         >
-          確認
+          {t('calculator.confirm')}
         </button>
       </div>
     </div>

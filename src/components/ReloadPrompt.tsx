@@ -32,10 +32,7 @@ export const ReloadPrompt: React.FC = () => {
   if (!needRefresh) return null;
 
   const versionString = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.6.0';
-  const promptMessage =
-    language === 'zh-TW'
-      ? `發現新版本 v${versionString}，是否立即更新？`
-      : `New version v${versionString} available, update now?`;
+  const promptMessage = t('pwa.prompt').replace('{version}', versionString);
 
   return (
     <div
@@ -47,7 +44,7 @@ export const ReloadPrompt: React.FC = () => {
         <span className="text-2xl" role="img" aria-label="sparkles">✨</span>
         <div>
           <h4 className="font-bold text-base sm:text-lg text-yellow-300">
-            {language === 'zh-TW' ? '系統有新版本可供更新' : 'New version available'}
+            {t('pwa.title')}
           </h4>
           <p className="text-xs sm:text-sm text-gray-300">
             {promptMessage}
@@ -60,14 +57,14 @@ export const ReloadPrompt: React.FC = () => {
           onClick={() => updateServiceWorker(true)}
           className="flex-1 sm:flex-initial px-5 py-2.5 text-sm sm:text-base font-bold transition-transform transform active:translate-y-px active:translate-x-px pixel-border bg-green-500 hover:bg-green-400 text-black text-center cursor-pointer"
         >
-          {t('pwa.reload') || '立即更新'}
+          {t('pwa.reload')}
         </button>
         <button
           id="pwa-close-btn"
           onClick={close}
           className="px-4 py-2.5 text-sm sm:text-base font-bold transition-transform transform active:translate-y-px active:translate-x-px pixel-border bg-gray-700 hover:bg-gray-600 text-gray-200 cursor-pointer"
         >
-          {t('pwa.close') || '稍後'}
+          {t('pwa.close')}
         </button>
       </div>
     </div>

@@ -122,11 +122,14 @@ export const translations: Record<Language, Record<string, string>> = {
     'pwa.newContent': '應用程式有新版本！',
     'pwa.reload': '更新',
     'pwa.close': '關閉',
+    'pwa.title': '系統有新版本可供更新',
+    'pwa.prompt': '發現新版本 v{version}，是否立即更新？',
     'search.title': '搜尋交易',
     'search.placeholder': '搜尋類別、備註或金額...',
     'search.noResults': '沒有找到符合的交易',
     'search.startTyping': '請輸入關鍵字開始搜尋',
-    'common.back': '返回'
+    'common.back': '返回',
+    'calculator.confirm': '確認'
   },
   'en': {
     'nav.record': 'Record',
@@ -171,7 +174,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'accounts.accountList': 'Account List',
     'accounts.noAccounts': 'No accounts yet!',
     'accounts.enable': 'Active',
-    'accounts.adjustBalance': 'Adjust',
+    'accounts.adjustBalance': 'Adjust Balance',
     'accounts.save': 'Save',
     'accounts.cancel': 'Cancel',
     'categories.title': 'Category Management',
@@ -241,18 +244,21 @@ export const translations: Record<Language, Record<string, string>> = {
     'alert.fillAllFields': 'Please fill all fields and ensure the amount is greater than 0!',
     'alert.enterAccountName': 'Please enter account name and initial balance!',
     'alert.enterCategoryName': 'Please enter a category name!',
-    'modal.invalidAmountTitle': 'Wrong amount',
-    'modal.invalidAmountMessage': 'The amount you fill in cannot be less than 0！',
-    'modal.recordAddedTitle': 'Joined successfully',
-    'modal.recordAddedMessage': 'A record has been successfully added for you！',
-    'pwa.newContent': 'New content is available!',
-    'pwa.reload': 'Reload',
-    'pwa.close': 'Close',
+    'modal.invalidAmountTitle': 'Invalid Amount',
+    'modal.invalidAmountMessage': 'Amount cannot be less than 0!',
+    'modal.recordAddedTitle': 'Success',
+    'modal.recordAddedMessage': 'Record has been successfully added!',
+    'pwa.newContent': 'New application version available!',
+    'pwa.reload': 'Update',
+    'pwa.close': 'Later',
+    'pwa.title': 'New version available',
+    'pwa.prompt': 'New version v{version} available, update now?',
     'search.title': 'Search Transactions',
     'search.placeholder': 'Search category, notes, or amount...',
     'search.noResults': 'No matching transactions found',
     'search.startTyping': 'Start typing to search',
-    'common.back': 'Back'
+    'common.back': 'Back',
+    'calculator.confirm': 'Confirm'
   }
 };
 
