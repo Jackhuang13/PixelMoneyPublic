@@ -40,28 +40,34 @@ export const ReloadPrompt: React.FC = () => {
   return (
     <div
       id="pwa-reload-prompt"
-      className="fixed right-4 bottom-20 sm:bottom-4 p-4 bg-gray-800 text-white pixel-border z-50 flex flex-col sm:flex-row items-start sm:items-center space-y-3 sm:space-y-0 sm:space-x-4 shadow-2xl max-w-sm"
+      className="fixed bottom-20 sm:bottom-6 left-4 right-4 max-w-lg mx-auto p-4 sm:p-5 bg-gray-900 text-white pixel-border z-50 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xl"
       role="alert"
     >
-      <div className="flex-grow">
-        <span className="font-bold text-sm sm:text-base text-yellow-300">
-          {promptMessage}
-        </span>
+      <div className="flex items-center space-x-3 w-full sm:w-auto">
+        <span className="text-2xl" role="img" aria-label="sparkles">✨</span>
+        <div>
+          <h4 className="font-bold text-base sm:text-lg text-yellow-300">
+            {language === 'zh-TW' ? '系統有新版本可供更新' : 'New version available'}
+          </h4>
+          <p className="text-xs sm:text-sm text-gray-300">
+            {promptMessage}
+          </p>
+        </div>
       </div>
-      <div className="flex space-x-2 w-full sm:w-auto justify-end">
+      <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
         <button
           id="pwa-update-btn"
           onClick={() => updateServiceWorker(true)}
-          className="px-4 py-2 text-sm sm:text-base font-bold transition-transform transform active:translate-y-px active:translate-x-px pixel-border bg-green-500 hover:bg-green-400"
+          className="flex-1 sm:flex-initial px-5 py-2.5 text-sm sm:text-base font-bold transition-transform transform active:translate-y-px active:translate-x-px pixel-border bg-green-500 hover:bg-green-400 text-black text-center cursor-pointer"
         >
-          {t('pwa.reload') || '更新'}
+          {t('pwa.reload') || '立即更新'}
         </button>
         <button
           id="pwa-close-btn"
           onClick={close}
-          className="px-4 py-2 text-sm sm:text-base font-bold transition-transform transform active:translate-y-px active:translate-x-px pixel-border bg-gray-500 hover:bg-gray-400"
+          className="px-4 py-2.5 text-sm sm:text-base font-bold transition-transform transform active:translate-y-px active:translate-x-px pixel-border bg-gray-700 hover:bg-gray-600 text-gray-200 cursor-pointer"
         >
-          {t('pwa.close') || '關閉'}
+          {t('pwa.close') || '稍後'}
         </button>
       </div>
     </div>

@@ -127,7 +127,7 @@ export const HomePage: React.FC = () => {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-yellow-400">
-        {t('home.title')} v1.6.0
+        {t('home.title')} v{__APP_VERSION__}
       </h1>
 
       {/* Add Transaction Form */}

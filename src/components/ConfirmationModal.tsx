@@ -41,7 +41,7 @@ export const ConfirmationModal: React.FC = () => {
               isSuccess ? 'bg-green-500' : isAlert ? 'bg-yellow-500' : 'bg-red-500'
             }`}
           >
-            {isSuccess || isAlert ? t('accounts.save') || 'OK' : t('modal.confirm')}
+            {isSuccess || isAlert ? t('modal.ok') || 'OK' : t('modal.confirm')}
           </button>
         </div>
       </div>

@@ -25,7 +25,6 @@ export const SettingsPage: React.FC = () => {
       const transactions = await db.transactions.toArray();
 
       const backupData = {
-        version: '1.6.0',
         timestamp: new Date().toISOString(),
         accounts,
         categories,
