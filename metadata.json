@@ -1,0 +1,6 @@
+{
+  "name": "像素記帳",
+  "description": "A retro pixel-style expense tracking and personal bookkeeping web application",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
