@@ -4,9 +4,23 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import packageJson from './package.json';
 
+const getBasePath = () => {
+  if (process.env.BASE_PATH !== undefined) {
+    const bp = process.env.BASE_PATH.trim();
+    if (!bp || bp === '/') return '/';
+    const withLeading = bp.startsWith('/') ? bp : `/${bp}`;
+    return withLeading.endsWith('/') ? withLeading : `${withLeading}/`;
+  }
+  if (process.env.GITHUB_REPOSITORY) {
+    const repo = process.env.GITHUB_REPOSITORY.split('/')[1];
+    return repo ? `/${repo}/` : '/';
+  }
+  return '/';
+};
+
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: process.env.BASE_PATH || (process.env.GITHUB_PAGES ? '/PixelMoney/' : '/'),
+  base: getBasePath(),
   server: {
     host: '0.0.0.0',
     port: 3000,
