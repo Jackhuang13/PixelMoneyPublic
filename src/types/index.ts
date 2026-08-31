@@ -43,11 +43,14 @@ export interface TransactionWithDetails extends Transaction {
   accountName?: string;
 }
 
+export type FontChoice = 'iansui' | 'zen-maru';
+
 /**
  * Application preference settings.
  */
 export interface AppSettings {
   showCalculator: boolean;
+  fontFamily?: FontChoice;
 }
 
 /**

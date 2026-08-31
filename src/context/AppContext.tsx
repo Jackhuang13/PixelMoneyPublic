@@ -68,13 +68,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const saved = localStorage.getItem('pixel-money-settings');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        return { showCalculator: true, fontFamily: 'iansui', ...parsed };
       } catch {
         // Fallback default
       }
     }
-    return { showCalculator: true };
+    return { showCalculator: true, fontFamily: 'iansui' };
   });
+
+  useEffect(() => {
+    const font = settings.fontFamily || 'iansui';
+    document.documentElement.setAttribute('data-font', font);
+  }, [settings.fontFamily]);
 
   const [confirmationModal, setConfirmationModal] = useState<ConfirmationModalState>({
     show: false,

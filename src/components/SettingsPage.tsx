@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useI18n } from '@/i18n';
 import { db } from '@/db';
-import type { Language, Category, Account, Transaction } from '@/types';
+import type { Language, Category, Account, Transaction, FontChoice } from '@/types';
 
 export const SettingsPage: React.FC = () => {
   const { settings, saveSettings, loadData, showConfirmationModal } = useApp();
@@ -16,6 +16,10 @@ export const SettingsPage: React.FC = () => {
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setLanguage(e.target.value as Language);
+  };
+
+  const handleFontChange = (font: FontChoice) => {
+    saveSettings({ ...settings, fontFamily: font });
   };
 
   const exportDatabase = async () => {
@@ -154,6 +158,22 @@ export const SettingsPage: React.FC = () => {
           >
             <option value="zh-TW">繁體中文</option>
             <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Font Settings Section */}
+      <div className="p-4 bg-gray-700 pixel-border space-y-4">
+        <h2 className="text-xl font-bold">{t('settings.fontFamily')}</h2>
+        <div>
+          <select
+            id="settings-font-select"
+            value={settings.fontFamily || 'iansui'}
+            onChange={(e) => handleFontChange(e.target.value as FontChoice)}
+            className="w-full bg-gray-200 text-black p-2 text-lg pixel-border-sm"
+          >
+            <option value="iansui">{t('font.iansui')}</option>
+            <option value="zen-maru">{t('font.zenMaru')}</option>
           </select>
         </div>
       </div>

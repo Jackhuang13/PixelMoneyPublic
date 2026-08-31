@@ -9,21 +9,19 @@ html, body, #app {
     overflow: hidden;
 }
 
-@font-face {
-    font-family: 'Cubic 11';
-    src: url('./assets/fonts/Cubic_11.woff2') format('woff2');
-    font-weight: normal;
-    font-style: normal;
-    font-display: swap;
-}
-
 /* 自訂像素風格樣式 */
 body, *, input, button, select, textarea {
-    font-family: 'Cubic 11', 'Pixelify Sans', sans-serif !important;
-    -webkit-font-smoothing: none !important;
+    -webkit-font-smoothing: antialiased !important;
     -moz-osx-font-smoothing: grayscale !important;
-    font-smoothing: none !important;
-    text-rendering: optimizeSpeed !important;
+    text-rendering: optimizeLegibility !important;
+}
+
+[data-font="zen-maru"] body, [data-font="zen-maru"] *, [data-font="zen-maru"] input, [data-font="zen-maru"] button, [data-font="zen-maru"] select, [data-font="zen-maru"] textarea {
+    font-family: 'Zen Maru Gothic', sans-serif !important;
+}
+
+[data-font="iansui"] body, [data-font="iansui"] *, [data-font="iansui"] input, [data-font="iansui"] button, [data-font="iansui"] select, [data-font="iansui"] textarea {
+    font-family: 'Iansui', sans-serif !important;
 }
 
 body {
