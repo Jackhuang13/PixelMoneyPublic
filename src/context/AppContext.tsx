@@ -15,6 +15,7 @@ import type {
   AppSettings,
   ConfirmationModalState,
   StatsDetailsContext,
+  StatsFilterState,
   PageType,
 } from '@/types';
 import { useI18n } from '@/i18n';
@@ -32,6 +33,8 @@ interface AppContextType {
   setCurrentPage: (page: PageType) => void;
   statsDetailsContext: StatsDetailsContext | null;
   setStatsDetailsContext: (ctx: StatsDetailsContext | null) => void;
+  statsFilterState: StatsFilterState;
+  setStatsFilterState: React.Dispatch<React.SetStateAction<StatsFilterState>>;
   confirmationModal: ConfirmationModalState;
   showConfirmationModal: (
     title: string,
@@ -64,6 +67,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [currentPage, setCurrentPage] = useState<PageType>('home');
   const [statsDetailsContext, setStatsDetailsContext] = useState<StatsDetailsContext | null>(null);
+  const [statsFilterState, setStatsFilterState] = useState<StatsFilterState>({
+    timeRange: 'monthly',
+    displayType: 'expense',
+    currentDateIso: new Date().toISOString(),
+    selectedDateStr: null,
+  });
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem('pixel-money-settings');
     if (saved) {
@@ -352,6 +361,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setCurrentPage,
         statsDetailsContext,
         setStatsDetailsContext,
+        statsFilterState,
+        setStatsFilterState,
         confirmationModal,
         showConfirmationModal,
         closeConfirmationModal,

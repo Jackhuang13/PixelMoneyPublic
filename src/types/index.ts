@@ -75,6 +75,16 @@ export interface StatsDetailsContext {
 }
 
 /**
+ * Filter and view state preserved across statistics drilldowns.
+ */
+export interface StatsFilterState {
+  timeRange: 'weekly' | 'monthly';
+  displayType: 'expense' | 'income';
+  currentDateIso: string;
+  selectedDateStr: string | null;
+}
+
+/**
  * Available application page navigation routes.
  */
 export type PageType =

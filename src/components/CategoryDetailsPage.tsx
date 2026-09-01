@@ -31,6 +31,9 @@ export const CategoryDetailsPage: React.FC = () => {
       day: 'numeric',
     });
     const endStr = endDate.toLocaleDateString(locale, { month: 'numeric', day: 'numeric' });
+    if (startDate.toDateString() === endDate.toDateString()) {
+      return startStr;
+    }
     return `${startStr} - ${endStr}`;
   }, [statsDetailsContext, language]);
 
